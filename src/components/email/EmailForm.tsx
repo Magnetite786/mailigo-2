@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { sendEmails } from "@/lib/emailService";
-import { Loader2, FileText, Send, Plus, X } from "lucide-react";
+import { Loader2, Send, Plus, X, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import EmailUploader from "./EmailUploader";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const EmailForm = () => {
   const [subject, setSubject] = useState("");
@@ -124,6 +125,15 @@ const EmailForm = () => {
         <CardTitle className="text-2xl">Send Bulk Emails</CardTitle>
         <CardDescription>Compose and send emails to multiple recipients</CardDescription>
       </CardHeader>
+      
+      <Alert className="mx-6 mb-4">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Demo Mode</AlertTitle>
+        <AlertDescription>
+          This is a frontend-only demo. In a real application, emails would be sent through a server-side API using Nodemailer.
+        </AlertDescription>
+      </Alert>
+      
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-6">
           <div className="space-y-2">
