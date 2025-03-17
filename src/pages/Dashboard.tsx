@@ -5,7 +5,7 @@ import Footer from "@/components/layout/Footer";
 import EmailForm from "@/components/email/EmailForm";
 import { useAuth } from "@/lib/firebase";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { InfoIcon } from "lucide-react";
+import { InfoIcon, Terminal } from "lucide-react";
 
 const Dashboard = () => {
   const { user, loading } = useAuth();
@@ -30,13 +30,29 @@ const Dashboard = () => {
           )}
         </div>
         
-        <Alert className="mb-8">
-          <InfoIcon className="h-4 w-4" />
-          <AlertTitle>Server Setup Required</AlertTitle>
-          <AlertDescription>
-            To send actual emails, start the Node.js server with <code>node server.js</code> in your terminal.
-            Make sure the server is running on localhost:3001 or update the SERVER_URL in emailService.ts.
-            You'll need a Gmail account with app password enabled for authentication.
+        <Alert className="mb-8 border-amber-500">
+          <Terminal className="h-4 w-4" />
+          <AlertTitle>How to run the email server</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>To send actual emails, you need to run the Node.js server locally. Follow these steps:</p>
+            <ol className="list-decimal ml-5 space-y-1">
+              <li>Download the project code (click on GitHub button in the top-right)</li>
+              <li>Open a terminal in the project directory</li>
+              <li>Run <code className="bg-muted px-1 py-0.5 rounded">npm install</code> to install dependencies</li>
+              <li>Run <code className="bg-muted px-1 py-0.5 rounded">node server.js</code> to start the email server</li>
+              <li>The server should be running on port 3001</li>
+            </ol>
+            <p className="text-sm mt-2">
+              Remember: You'll need a Gmail account with app password enabled for authentication.
+              <a 
+                href="https://support.google.com/accounts/answer/185833" 
+                target="_blank" 
+                rel="noreferrer"
+                className="underline ml-1"
+              >
+                Learn how to create an app password
+              </a>
+            </p>
           </AlertDescription>
         </Alert>
         

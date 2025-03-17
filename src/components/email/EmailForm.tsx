@@ -126,11 +126,11 @@ const EmailForm = () => {
         <CardDescription>Compose and send emails to multiple recipients</CardDescription>
       </CardHeader>
       
-      <Alert className="mx-6 mb-4">
+      <Alert className="mx-6 mb-4 border-blue-500">
         <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Demo Mode</AlertTitle>
+        <AlertTitle>Server Required</AlertTitle>
         <AlertDescription>
-          This is a frontend-only demo. In a real application, emails would be sent through a server-side API using Nodemailer.
+          This application uses a Node.js server with Nodemailer to send emails. Make sure the server is running with <code className="bg-muted px-1 py-0.5 rounded">node server.js</code> before trying to send emails.
         </AlertDescription>
       </Alert>
       
