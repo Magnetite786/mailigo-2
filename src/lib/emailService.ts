@@ -1,3 +1,4 @@
+
 import { toast } from "@/hooks/use-toast";
 
 interface EmailParams {
@@ -8,38 +9,44 @@ interface EmailParams {
   appPassword: string;
 }
 
+// Server URL - change this to your actual server URL when deployed
+const SERVER_URL = "http://localhost:3001";
+
 export const sendEmails = async (params: EmailParams): Promise<boolean> => {
   try {
-    // IMPORTANT: This is a client-side only implementation
-    // In a real application, you would call a backend API endpoint that uses Nodemailer
-    // A frontend-only application cannot actually send emails due to browser security restrictions
-    
-    console.log("Email sending details:", {
-      from: params.fromEmail,
-      to: params.to,
-      subject: params.subject,
-      bodyLength: params.body.length,
-      credentialsProvided: Boolean(params.appPassword)
+    // Show loading toast
+    toast({
+      title: "Sending emails...",
+      description: `Attempting to send ${params.to.length} emails. This may take a moment.`,
     });
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
+    // Call the backend API
+    const response = await fetch(`${SERVER_URL}/api/send-emails`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to send emails');
+    }
+
     // Success notification
     toast({
-      title: "Email sending simulated!",
-      description: `In a real application, ${params.to.length} emails would be sent through a backend service. This frontend-only demo cannot actually send emails.`,
+      title: "Emails sent successfully!",
+      description: `${params.to.length} emails have been sent.`,
     });
-    
-    // Also show an alert to make it extra clear
-    alert(`IMPORTANT: This is a simulation only!\n\nIn a real application, emails would be sent through a backend service that uses Nodemailer. This frontend-only demo cannot actually send real emails due to browser security restrictions.\n\nTo implement actual email sending, you would need to:\n1. Create a backend API (Node.js, Express, etc.)\n2. Use Nodemailer on the server-side\n3. Keep email credentials secure on the server\n\nThe email form is working correctly, but actual email delivery requires server-side code.`);
-    
+
     return true;
   } catch (error) {
-    console.error("Error in email simulation:", error);
+    console.error("Error sending emails:", error);
     toast({
       variant: "destructive",
-      title: "Simulation error",
+      title: "Failed to send emails",
       description: error instanceof Error ? error.message : "Unknown error occurred",
     });
     return false;

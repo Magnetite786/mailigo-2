@@ -32,10 +32,11 @@ const Dashboard = () => {
         
         <Alert className="mb-8">
           <InfoIcon className="h-4 w-4" />
-          <AlertTitle>Frontend Demo Limitations</AlertTitle>
+          <AlertTitle>Server Setup Required</AlertTitle>
           <AlertDescription>
-            This is a frontend-only demo application. To implement actual email sending functionality, a backend server would be required. 
-            In a real-world implementation, email credentials would be securely handled on the server side using Nodemailer.
+            To send actual emails, start the Node.js server with <code>node server.js</code> in your terminal.
+            Make sure the server is running on localhost:3001 or update the SERVER_URL in emailService.ts.
+            You'll need a Gmail account with app password enabled for authentication.
           </AlertDescription>
         </Alert>
         
