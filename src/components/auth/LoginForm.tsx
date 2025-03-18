@@ -1,40 +1,41 @@
-
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signIn } from "@/lib/firebase";
+import { useToast } from "@/components/ui/use-toast";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { signIn } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 
-const LoginForm = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
+export default function LoginForm() {
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setLoading(true);
+    setIsLoading(true);
+
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
     try {
-      await signIn(email, password);
+      await signIn({ email, password });
       toast({
-        title: "Login successful!",
-        description: "Welcome back to BulkMailer",
+        title: "Logged in successfully!",
+        description: "Welcome back to your account.",
       });
       navigate("/dashboard");
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Login failed",
-        description: error instanceof Error ? error.message : "Invalid email or password",
+        description: error.message,
       });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -50,10 +51,13 @@ const LoginForm = () => {
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
-              type="email"
+              name="email"
               placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              autoCapitalize="none"
+              autoComplete="email"
+              autoCorrect="off"
+              disabled={isLoading}
               required
             />
           </div>
@@ -61,9 +65,12 @@ const LoginForm = () => {
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
+              name="password"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              autoCapitalize="none"
+              autoComplete="current-password"
+              autoCorrect="off"
+              disabled={isLoading}
               required
             />
           </div>
@@ -72,9 +79,9 @@ const LoginForm = () => {
           <Button 
             type="submit" 
             className="w-full gradient-bg"
-            disabled={loading}
+            disabled={isLoading}
           >
-            {loading ? (
+            {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Logging in
@@ -95,6 +102,4 @@ const LoginForm = () => {
       </form>
     </Card>
   );
-};
-
-export default LoginForm;
+}

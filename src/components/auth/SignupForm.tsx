@@ -1,51 +1,42 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createUser } from "@/lib/firebase";
+import { useToast } from "@/components/ui/use-toast";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { signUp } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 
-const SignupForm = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
+export default function SignupForm() {
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    if (password !== confirmPassword) {
-      toast({
-        variant: "destructive",
-        title: "Passwords don't match",
-        description: "Please make sure your passwords match.",
-      });
-      return;
-    }
+    setIsLoading(true);
 
-    setLoading(true);
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const fullName = formData.get("fullName") as string;
 
     try {
-      await createUser(email, password);
+      await signUp({ email, password, fullName });
       toast({
-        title: "Account created!",
-        description: "Your BulkMailer account has been created successfully.",
+        title: "Account created successfully!",
+        description: "Please check your email to verify your account.",
       });
-      navigate("/dashboard");
-    } catch (error) {
+      navigate("/login");
+    } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Signup failed",
-        description: error instanceof Error ? error.message : "An error occurred during signup",
+        title: "Error creating account",
+        description: error.message,
       });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -58,13 +49,29 @@ const SignupForm = () => {
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
           <div className="space-y-2">
+            <Label htmlFor="fullName">Full Name</Label>
+            <Input
+              id="fullName"
+              name="fullName"
+              placeholder="John Doe"
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              disabled={isLoading}
+              required
+            />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
-              type="email"
+              name="email"
               placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              autoCapitalize="none"
+              autoComplete="email"
+              autoCorrect="off"
+              disabled={isLoading}
               required
             />
           </div>
@@ -72,19 +79,12 @@ const SignupForm = () => {
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
+              name="password"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoCapitalize="none"
+              autoComplete="new-password"
+              autoCorrect="off"
+              disabled={isLoading}
               required
             />
           </div>
@@ -93,9 +93,9 @@ const SignupForm = () => {
           <Button 
             type="submit" 
             className="w-full gradient-bg"
-            disabled={loading}
+            disabled={isLoading}
           >
-            {loading ? (
+            {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Creating Account
@@ -116,6 +116,4 @@ const SignupForm = () => {
       </form>
     </Card>
   );
-};
-
-export default SignupForm;
+}

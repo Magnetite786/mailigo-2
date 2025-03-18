@@ -20,13 +20,13 @@ app.use(express.json());
 // Email sending endpoint
 app.post('/api/send-emails', async (req, res) => {
   try {
-    const { to, subject, body, fromEmail, appPassword, batchSize = 10, delayBetweenBatches = 1 } = req.body;
+    const { to, subject, body, fromEmail, appPassword, batchSize = 10, delayBetweenBatches = 1, isHtml = false } = req.body;
     
     if (!to || !to.length || !subject || !body || !fromEmail || !appPassword) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
     
-    console.log(`Attempting to send emails to ${to.length} recipients`);
+    console.log(`Attempting to send ${isHtml ? 'HTML' : 'text'} emails to ${to.length} recipients`);
     console.log(`Using batch size: ${batchSize}, delay: ${delayBetweenBatches}s`);
     
     // Configure transporter
@@ -51,9 +51,9 @@ app.post('/api/send-emails', async (req, res) => {
       try {
         const mailOptions = {
           from: fromEmail,
-          bcc: batch, // Using BCC for bulk emails
+          bcc: batch,
           subject: subject,
-          html: body,
+          [isHtml ? 'html' : 'text']: body, // Use html or text based on isHtml flag
         };
         
         const info = await transporter.sendMail(mailOptions);
@@ -79,17 +79,10 @@ app.post('/api/send-emails', async (req, res) => {
     // Add delivered count to the response
     const deliveredCount = to.length - failedEmails.length;
     
-    // If we've actually delivered some emails but status is 'failed', correct it
-    const correctedStatus = deliveredCount > 0 ? (deliveredCount === to.length ? 'success' : 'partial') : 'failed';
-    
-    if (status !== correctedStatus) {
-      console.log(`Correcting status from ${status} to ${correctedStatus} based on actual delivery count`);
-    }
-    
     res.status(200).json({ 
       success: true, 
-      message: `Sent emails to ${deliveredCount} of ${to.length} recipients`,
-      status: correctedStatus,
+      message: `Sent ${isHtml ? 'HTML' : 'text'} emails to ${deliveredCount} of ${to.length} recipients`,
+      status,
       deliveredCount,
       results,
       failedEmails

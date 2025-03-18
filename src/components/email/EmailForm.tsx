@@ -1,508 +1,436 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { sendEmails } from "@/lib/emailService";
-import { Loader2, Send, Plus, X, AlertTriangle, Upload, FileSpreadsheet } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import EmailUploader from "./EmailUploader";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabase";
+import { Loader2, Upload, X, Trash, Eye } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { saveEmailHistory } from "@/lib/firebaseServices";
-import { useAuth } from "@/lib/firebase";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import * as XLSX from "xlsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-type EmailFormProps = {
-  storedAppPassword?: string | null;
-  storedGmailAddress?: string | null;
-  onEmailSent?: (success: boolean, data?: any) => void;
-};
-
-interface EmailResponse {
-  success: boolean;
-  message: string;
-  status: 'success' | 'failed' | 'partial';
-  results?: any[];
-  failedEmails?: string[];
+interface EmailConfig {
+  id: string;
+  email: string;
+  app_password: string;
+  created_at: string;
 }
 
-const EmailForm: React.FC<EmailFormProps> = ({ 
-  storedAppPassword, 
-  storedGmailAddress,
-  onEmailSent 
-}) => {
-  const { user } = useAuth();
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [gmailAddress, setGmailAddress] = useState(storedGmailAddress || "");
-  const [appPassword, setAppPassword] = useState(storedAppPassword || "");
-  const [manualEmail, setManualEmail] = useState("");
-  const [emailList, setEmailList] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+const EmailForm = () => {
   const { toast } = useToast();
-  
-  // Added for rate limiting
-  const [batchSize, setBatchSize] = useState(10);
-  const [delayBetweenBatches, setDelayBetweenBatches] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [emailConfigs, setEmailConfigs] = useState<EmailConfig[]>([]);
+  const [selectedConfig, setSelectedConfig] = useState<string>("");
+  const [isHtmlMode, setIsHtmlMode] = useState(false);
+  const [htmlContent, setHtmlContent] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
+  const [formData, setFormData] = useState({
+    subject: "",
+    content: "",
+    manualEmails: "",
+  });
+  const [extractedEmails, setExtractedEmails] = useState<string[]>([]);
 
-  const handleEmailsAdded = (emails: string[]) => {
-    // Filter out duplicates
-    const newEmails = emails.filter(email => !emailList.includes(email));
-    setEmailList(prev => [...prev, ...newEmails]);
+  useEffect(() => {
+    loadEmailConfigs();
+  }, []);
+
+  const loadEmailConfigs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("email_configs")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setEmailConfigs(data || []);
+      
+      // Set the first config as default if available
+      if (data && data.length > 0 && !selectedConfig) {
+        setSelectedConfig(data[0].id);
+      }
+    } catch (error) {
+      toast({
+        title: "Error loading email configurations",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array" });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const validEmails = new Set<string>();
+
+        // Add existing manual emails
+        formData.manualEmails
+          .split(",")
+          .map((email) => email.trim())
+          .filter((email) => emailRegex.test(email))
+          .forEach((email) => validEmails.add(email.toLowerCase()));
+
+        // Add emails from file
+        jsonData.forEach((row: any) => {
+          if (Array.isArray(row)) {
+            row.forEach((cell) => {
+              const str = String(cell).trim();
+              if (emailRegex.test(str)) {
+                validEmails.add(str.toLowerCase());
+              }
+            });
+          }
+        });
+
+        setExtractedEmails(Array.from(validEmails));
+        toast({
+          title: "File processed successfully",
+          description: `Found ${validEmails.size} valid email addresses`,
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      toast({
+        title: "Error processing file",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleManualEmailsChange = (value: string) => {
+    setFormData({ ...formData, manualEmails: value });
     
-    toast({
-      title: "Emails added",
-      description: `${newEmails.length} new emails added to the list.`,
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const validEmails = new Set<string>();
+    
+    // Add existing file-extracted emails
+    extractedEmails.forEach((email) => validEmails.add(email));
+    
+    // Add manual emails
+    value
+      .split(",")
+      .map((email) => email.trim())
+      .filter((email) => emailRegex.test(email))
+      .forEach((email) => validEmails.add(email.toLowerCase()));
+    
+    setExtractedEmails(Array.from(validEmails));
+  };
+
+  const removeEmail = (emailToRemove: string) => {
+    setExtractedEmails(extractedEmails.filter((email) => email !== emailToRemove));
+    setFormData({
+      ...formData,
+      manualEmails: formData.manualEmails
+        .split(",")
+        .map((email) => email.trim())
+        .filter((email) => email !== emailToRemove)
+        .join(", "),
     });
   };
 
-  const addManualEmail = () => {
-    if (!manualEmail) return;
-    
-    // Simple email validation
-    if (!manualEmail.includes('@') || !manualEmail.includes('.')) {
-      toast({
-        variant: "destructive",
-        title: "Invalid email",
-        description: "Please enter a valid email address",
-      });
-      return;
-    }
-    
-    if (!emailList.includes(manualEmail)) {
-      setEmailList(prev => [...prev, manualEmail]);
-      setManualEmail("");
-    } else {
-      toast({
-        variant: "destructive",
-        title: "Duplicate email",
-        description: "This email is already in your list",
-      });
-    }
-  };
+  const handleHtmlFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const removeEmail = (email: string) => {
-    setEmailList(prev => prev.filter(e => e !== email));
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setHtmlContent(content);
+    };
+    reader.readAsText(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!user?.uid) {
-      console.error("Cannot submit form: user is not authenticated");
+    if (!selectedConfig || !formData.subject || !(formData.content || htmlContent) || !extractedEmails.length) {
       toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields and add at least one recipient.",
         variant: "destructive",
-        title: "Authentication required",
-        description: "Please log in to send emails",
       });
       return;
     }
-    
-    // Store the user ID locally to ensure persistence
+
+    setIsLoading(true);
     try {
-      localStorage.setItem('lastActiveUser', JSON.stringify({
-        uid: user.uid,
-        email: user.email,
-        timestamp: new Date().toISOString()
-      }));
-      console.log('Stored active user in localStorage for persistence');
-    } catch (e) {
-      console.warn('Could not store user in localStorage:', e);
-    }
-    
-    if (emailList.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "No recipients",
-        description: "Please add at least one email recipient",
-      });
-      return;
-    }
-    
-    if (!gmailAddress.endsWith('@gmail.com')) {
-      toast({
-        variant: "destructive",
-        title: "Invalid sender email",
-        description: "Sender email must be a Gmail address",
-      });
-      return;
-    }
-    
-    if (!appPassword) {
-      toast({
-        variant: "destructive",
-        title: "App password required",
-        description: "Please enter your Gmail app password",
-      });
-      return;
-    }
-    
-    setLoading(true);
-    let historyId = null;
-    console.log("Starting email sending process with", emailList.length, "recipients");
-    
-    try {
-      // Show sending toast
-      toast({
-        title: "Sending emails...",
-        description: `Attempting to send ${emailList.length} emails. This may take a moment.`,
-      });
-      
-      // Call the email service and get the response
-      console.log("Making request to email server");
-      const response = await fetch(`http://localhost:3001/api/send-emails`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No authenticated user");
+
+      const config = emailConfigs.find((c) => c.id === selectedConfig);
+      if (!config) throw new Error("Selected email configuration not found");
+
+      const response = await fetch("http://localhost:3001/api/send-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          to: emailList,
-          subject,
-          body,
-          fromEmail: gmailAddress,
-          appPassword,
-          batchSize,
-          delayBetweenBatches
+          to: extractedEmails,
+          subject: formData.subject,
+          body: isHtmlMode ? htmlContent : formData.content,
+          fromEmail: config.email,
+          appPassword: config.app_password,
+          batchSize: 10,
+          delayBetweenBatches: 1,
+          isHtml: isHtmlMode,
         }),
       });
-      
-      console.log("Received response from server:", response.status);
-      const data: EmailResponse = await response.json();
-      console.log("Email server response data:", JSON.stringify(data, null, 2));
-      
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to send emails');
-      }
-      
-      // Save more detailed email history
-      try {
-        console.log("Saving email history to Firebase");
-        // Fix: Determine status based on deliveredCount rather than server status when emails are actually delivered
-        let emailStatus = data.status;
-        
-        // If we have a successful delivery but status says failed, correct it
-        if (data.status === 'failed' && emailList.length > 0 && (!data.failedEmails || data.failedEmails.length < emailList.length)) {
-          emailStatus = data.failedEmails?.length ? 'partial' : 'success';
-          console.log('Corrected status from failed to:', emailStatus);
-        }
-        
-        const historyData = {
-          subject,
-          recipients: emailList.length,
-          status: emailStatus, // Use the corrected status
-          body,
-          fromEmail: gmailAddress,
-          deliveredCount: emailList.length - (data.failedEmails?.length || 0),
-          failedEmails: data.failedEmails,
-          batchSize,
-          delayBetweenBatches
-        };
-        
-        console.log("Saving email history with data:", JSON.stringify(historyData, null, 2));
-        console.log("Current user ID:", user.uid);
-        
-        // Store history data in localStorage before saving to Firebase
-        try {
-          const tempId = 'temp_' + Date.now();
-          localStorage.setItem(`pendingHistory_${tempId}`, JSON.stringify({
-            userId: user.uid,
-            data: historyData,
-            timestamp: new Date().toISOString()
-          }));
-          console.log('Stored history data in localStorage as backup');
-        } catch (e) {
-          console.warn('Could not store history in localStorage:', e);
-        }
-        
-        historyId = await saveEmailHistory(user.uid, historyData);
-        console.log("Email history saved with ID:", historyId);
-        
-        // Remove from localStorage after successful save
-        try {
-          const pendingSaves = Object.keys(localStorage)
-            .filter(key => key.startsWith('pendingHistory_'));
-          
-          if (pendingSaves.length > 0) {
-            console.log('Cleaning up pending history saves:', pendingSaves.length);
-            pendingSaves.forEach(key => {
-              localStorage.removeItem(key);
-            });
-          }
-        } catch (e) {
-          console.warn('Error cleaning up pending history saves:', e);
-        }
-        
-        // Reset form after successful send
-        setSubject("");
-        setBody("");
-        setEmailList([]);
-        
-        // Success notification
-        toast({
-          title: emailStatus === 'success' ? "Success!" : emailStatus === 'partial' ? "Partially Successful" : "Failed",
-          description: data.message,
-        });
-        
-        // Call the callback if provided with success=true and data
-        if (onEmailSent) {
-          console.log("Calling onEmailSent callback with success=true");
-          onEmailSent(true, { ...historyData, id: historyId });
-        }
-      } catch (historyError) {
-        console.error("Error saving email history:", historyError);
-        
-        // Try to save email history again after a short delay
-        setTimeout(async () => {
-          try {
-            console.log("Retrying to save email history after error");
-            const historyData = {
-              subject,
-              recipients: emailList.length,
-              status: data.status,
-              body,
-              fromEmail: gmailAddress,
-              deliveredCount: emailList.length - (data.failedEmails?.length || 0),
-              failedEmails: data.failedEmails,
-              batchSize,
-              delayBetweenBatches
-            };
-            
-            historyId = await saveEmailHistory(user.uid, historyData);
-            console.log("Email history saved on retry with ID:", historyId);
-            
-            if (onEmailSent && historyId) {
-              onEmailSent(true, { ...historyData, id: historyId });
-            }
-          } catch (retryError) {
-            console.error("Failed retry to save email history:", retryError);
-          }
-        }, 2000);
-        
-        // Continue without crashing if history saving fails
-        toast({
-          title: "Emails sent successfully",
-          description: "But we couldn't save to your history. Please try refreshing.",
-        });
-        
-        // Still call callback but with no data
-        if (onEmailSent) {
-          onEmailSent(true);
-        }
-      }
-    } catch (error) {
-      console.error("Error sending emails:", error);
-      
-      // Save failed attempt to history
-      try {
-        console.log("Saving failed email attempt to history");
-        const failedData = {
-          subject,
-          recipients: emailList.length,
-          status: 'failed' as const,
-          body,
-          fromEmail: gmailAddress,
-          batchSize,
-          delayBetweenBatches
-        };
-        
-        historyId = await saveEmailHistory(user.uid, failedData);
-        console.log("Failed email history saved with ID:", historyId);
-        
-        // Call callback with failure
-        if (onEmailSent) {
-          onEmailSent(false, { ...failedData, id: historyId });
-        }
-      } catch (historyError) {
-        console.error("Error saving failed email history:", historyError);
-        // Call callback with failure but no data
-        if (onEmailSent) {
-          onEmailSent(false);
-        }
-      }
-      
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message);
+
+      // Save email record to Supabase
+      const { error: dbError } = await supabase.from("emails").insert({
+        subject: formData.subject,
+        content: isHtmlMode ? htmlContent : formData.content,
+        total_recipients: extractedEmails.length,
+        delivered_count: result.deliveredCount || 0,
+        status: result.status || "completed",
+        from_email: config.email,
+        user_id: user.id,
+        is_html: isHtmlMode,
+      });
+
+      if (dbError) throw dbError;
+
       toast({
+        title: "Success",
+        description: result.message,
+      });
+
+      // Reset form
+      setFormData({ subject: "", content: "", manualEmails: "" });
+      setHtmlContent("");
+      setExtractedEmails([]);
+    } catch (error) {
+      toast({
+        title: "Error sending emails",
+        description: error.message,
         variant: "destructive",
-        title: "Failed to send emails",
-        description: error instanceof Error ? error.message : "Please check your credentials and try again",
       });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
+  };
+
+  const quillModules = {
+    toolbar: [
+      [{ header: [1, 2, 3, false] }],
+      ["bold", "italic", "underline", "strike"],
+      [{ list: "ordered" }, { list: "bullet" }],
+      [{ color: [] }, { background: [] }],
+      ["link"],
+      ["clean"],
+    ],
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Left Column - Email Settings */}
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="gmailAddress">Your Gmail Address</Label>
-            <Input
-              id="gmailAddress"
-              type="email"
-              placeholder="your@gmail.com"
-              value={gmailAddress}
-              onChange={(e) => setGmailAddress(e.target.value)}
-              required
-            />
-            <p className="text-sm text-muted-foreground">Must be a Gmail address to use nodemailer</p>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="appPassword">Gmail App Password</Label>
-            <Input
-              id="appPassword"
-              type="password"
-              placeholder="Your app password"
-              value={appPassword}
-              onChange={(e) => setAppPassword(e.target.value)}
-              required
-            />
-            <p className="text-sm text-muted-foreground">
-              <a 
-                href="https://support.google.com/accounts/answer/185833" 
-                target="_blank" 
-                rel="noreferrer"
-                className="underline"
-              >
-                How to generate an app password
-              </a>
-            </p>
-          </div>
-          
-          {/* Rate Limiting Settings */}
-          <div className="space-y-2">
-            <Label>Rate Limiting</Label>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="batchSize" className="text-xs">Batch Size</Label>
-                <Input
-                  id="batchSize"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={batchSize}
-                  onChange={(e) => setBatchSize(parseInt(e.target.value))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="delayBetweenBatches" className="text-xs">Delay (seconds)</Label>
-                <Input
-                  id="delayBetweenBatches"
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={delayBetweenBatches}
-                  onChange={(e) => setDelayBetweenBatches(parseInt(e.target.value))}
-                />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">Adjust these settings to avoid Gmail rate limits</p>
-          </div>
-        </div>
-
-        {/* Right Column - Recipients */}
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <Label>Recipients</Label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {emailList.map((email) => (
-                <Badge key={email} className="flex items-center gap-1">
-                  {email}
-                  <button 
-                    type="button" 
-                    onClick={() => removeEmail(email)}
-                    className="ml-1 rounded-full hover:bg-primary-foreground/20"
-                  >
-                    <X size={14} />
-                  </button>
-                </Badge>
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="sender">Sender Email</Label>
+          <Select value={selectedConfig} onValueChange={setSelectedConfig}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select sender email" />
+            </SelectTrigger>
+            <SelectContent>
+              {emailConfigs.map((config) => (
+                <SelectItem key={config.id} value={config.id}>
+                  {config.email}
+                </SelectItem>
               ))}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Add email manually"
-                value={manualEmail}
-                onChange={(e) => setManualEmail(e.target.value)}
-              />
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={addManualEmail}
-              >
-                <Plus size={16} className="mr-2" />
-                Add
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              {emailList.length} recipients in the list
-            </p>
-          </div>
-
-          <Card className="p-4">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <FileSpreadsheet className="h-4 w-4" />
-                <span>Import from CSV/Excel</span>
-              </div>
-              <EmailUploader onEmailsAdded={handleEmailsAdded} />
-            </div>
-          </Card>
+            </SelectContent>
+          </Select>
         </div>
-      </div>
 
-      <Separator />
-
-      {/* Email Content */}
-      <div className="space-y-6">
-        <div className="space-y-2">
+        <div>
           <Label htmlFor="subject">Subject</Label>
           <Input
             id="subject"
+            value={formData.subject}
+            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
             placeholder="Email subject"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            required
           />
         </div>
-        
-        <div className="space-y-2">
-          <Label htmlFor="body">Email Body</Label>
-          <Textarea
-            id="body"
-            placeholder="Write your message here..."
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={8}
-            required
-          />
+
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <Label htmlFor="content">Content</Label>
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="html-mode">HTML Mode</Label>
+              <Switch
+                id="html-mode"
+                checked={isHtmlMode}
+                onCheckedChange={setIsHtmlMode}
+              />
+            </div>
+          </div>
+
+          {isHtmlMode ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <Input
+                  type="file"
+                  accept=".html"
+                  onChange={handleHtmlFileUpload}
+                  className="hidden"
+                  id="html-file"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => document.getElementById("html-file")?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload HTML File
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowPreview(true)}
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview
+                </Button>
+              </div>
+              <Textarea
+                value={htmlContent}
+                onChange={(e) => setHtmlContent(e.target.value)}
+                placeholder="Paste your HTML code here..."
+                className="min-h-[200px] font-mono"
+              />
+            </div>
+          ) : (
+            <div className="min-h-[200px] border rounded-md">
+              <ReactQuill
+                theme="snow"
+                value={formData.content}
+                onChange={(content) => setFormData({ ...formData, content })}
+                modules={quillModules}
+                placeholder="Compose your email..."
+              />
+            </div>
+          )}
         </div>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="manualEmails">Recipients (Enter emails separated by commas)</Label>
+            <Textarea
+              id="manualEmails"
+              value={formData.manualEmails}
+              onChange={(e) => handleManualEmailsChange(e.target.value)}
+              placeholder="Enter email addresses separated by commas"
+              className="h-20"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="file">Or Upload Recipients (CSV/Excel file)</Label>
+            <div className="flex items-center gap-4">
+              <Input
+                id="file"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => document.getElementById("file")?.click()}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload File
+              </Button>
+              {extractedEmails.length > 0 && (
+                <Badge variant="secondary">
+                  {extractedEmails.length} email{extractedEmails.length !== 1 && "s"}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {extractedEmails.length > 0 && (
+          <Card className="p-4">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label>Recipients List</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setExtractedEmails([]);
+                    setFormData({ ...formData, manualEmails: "" });
+                  }}
+                >
+                  <Trash className="w-4 h-4 mr-2" />
+                  Clear All
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {extractedEmails.map((email) => (
+                  <Badge key={email} variant="secondary" className="flex items-center gap-1">
+                    {email}
+                    <button
+                      type="button"
+                      onClick={() => removeEmail(email)}
+                      className="hover:text-destructive"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
-      <div className="flex justify-between items-center">
-        <Button variant="outline" type="button" onClick={() => setEmailList([])}>
-          Clear Recipients
-        </Button>
-        <Button 
-          type="submit" 
-          className="gradient-bg" 
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Sending...
-            </>
-          ) : (
-            <>
-              <Send className="mr-2 h-4 w-4" />
-              Send Emails
-            </>
-          )}
-        </Button>
-      </div>
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Email Preview</DialogTitle>
+          </DialogHeader>
+          <div
+            className="mt-4"
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Button type="submit" disabled={isLoading}>
+        {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        Send Emails
+      </Button>
     </form>
   );
 };

@@ -1,24 +1,38 @@
-
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useAuth, logout } from "@/lib/firebase";
-import { Mail, Menu, X, LogOut } from "lucide-react";
+import { getCurrentUser, signOut } from "@/lib/supabase";
+import { Mail, LogOut, LayoutDashboard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const Navbar = () => {
-  const { user } = useAuth();
+  const [user, setUser] = useState<any>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
-  const [isOpen, setIsOpen] = useState(false);
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        setUser(null);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const handleSignOut = async () => {
     try {
-      await logout();
+      await signOut();
+      setUser(null);
+      navigate("/login");
       toast({
         title: "Logged out successfully",
       });
     } catch (error) {
+      console.error("Error signing out:", error);
       toast({
         variant: "destructive",
         title: "Logout failed",
@@ -27,117 +41,56 @@ const Navbar = () => {
     }
   };
 
-  const navLinks = [
-    { title: "Home", path: "/" },
-    { title: "Features", path: "/#features" },
-    { title: "Pricing", path: "/#pricing" },
-  ];
+  const isActive = (path: string) => location.pathname === path;
 
   return (
-    <nav className="border-b fixed top-0 left-0 right-0 bg-background/80 backdrop-blur-sm z-10">
-      <div className="container mx-auto px-4 flex justify-between items-center h-16">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b bg-white shadow-sm">
+      <div className="container flex h-14 items-center px-4">
         <Link to="/" className="flex items-center space-x-2">
           <Mail className="h-6 w-6 text-primary" />
-          <span className="font-bold text-xl">BulkMailer</span>
+          <span className="hidden font-bold sm:inline-block text-xl">
+            Bulk Mail
+          </span>
         </Link>
 
-        {/* Desktop Navigation */}
-        <div className="hidden md:flex md:items-center md:space-x-6">
-          {navLinks.map((link) => (
-            <Link 
-              key={link.title} 
-              to={link.path} 
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {link.title}
-            </Link>
-          ))}
-          
-          {user ? (
-            <div className="flex items-center gap-4">
-              <Link to="/dashboard">
-                <Button variant="outline">Dashboard</Button>
-              </Link>
-              <Button variant="ghost" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <Link to="/login">
-                <Button variant="ghost">Login</Button>
-              </Link>
-              <Link to="/signup">
-                <Button className="gradient-bg">Sign Up</Button>
-              </Link>
-            </div>
-          )}
-        </div>
+        <div className="flex-1" />
 
-        {/* Mobile Navigation */}
-        <div className="md:hidden">
-          <Sheet open={isOpen} onOpenChange={setIsOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-6 w-6" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent>
-              <div className="flex flex-col space-y-6 mt-6">
-                {navLinks.map((link) => (
-                  <Link 
-                    key={link.title} 
-                    to={link.path} 
-                    className="text-foreground text-lg"
-                    onClick={() => setIsOpen(false)}
-                  >
-                    {link.title}
-                  </Link>
-                ))}
-                
-                {user ? (
-                  <>
-                    <Link 
-                      to="/dashboard" 
-                      className="text-foreground text-lg"
-                      onClick={() => setIsOpen(false)}
-                    >
-                      Dashboard
-                    </Link>
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => {
-                        handleLogout();
-                        setIsOpen(false);
-                      }}
-                      className="justify-start p-0 h-auto font-normal text-lg"
-                    >
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Logout
-                    </Button>
-                  </>
-                ) : (
-                  <div className="flex flex-col space-y-2">
-                    <Link 
-                      to="/login"
-                      onClick={() => setIsOpen(false)}
-                    >
-                      <Button variant="outline" className="w-full">Login</Button>
-                    </Link>
-                    <Link 
-                      to="/signup"
-                      onClick={() => setIsOpen(false)}
-                    >
-                      <Button className="w-full gradient-bg">Sign Up</Button>
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
+        {user ? (
+          <div className="flex items-center space-x-1">
+            <Button
+              variant={isActive("/dashboard") ? "default" : "ghost"}
+              onClick={() => navigate("/dashboard")}
+              className={isActive("/dashboard") ? "bg-primary text-white" : "hover:bg-primary/10"}
+            >
+              <LayoutDashboard className="w-4 h-4 mr-2" />
+              Dashboard
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleSignOut}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/login")}
+              className="hover:bg-primary/10"
+            >
+              Sign In
+            </Button>
+            <Button
+              onClick={() => navigate("/signup")}
+              className="bg-primary hover:bg-primary/90"
+            >
+              Get Started
+            </Button>
+          </div>
+        )}
       </div>
     </nav>
   );

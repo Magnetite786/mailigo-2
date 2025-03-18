@@ -1,5 +1,7 @@
 import { toast } from "@/hooks/use-toast";
 import * as XLSX from 'xlsx';
+import { supabase } from "./supabase";
+import { sendEmail } from "./utils";
 
 interface EmailParams {
   to: string[];
@@ -11,47 +13,153 @@ interface EmailParams {
   delayBetweenBatches?: number;
 }
 
+interface ScheduledEmail {
+  id: string;
+  subject: string;
+  content: string;
+  recipients: string[];
+  scheduled_date: string;
+  status: "pending" | "sent" | "failed";
+  user_id: string;
+}
+
+interface WorkflowStep {
+  id: string;
+  subject: string;
+  content: string;
+  delay: number;
+  condition?: {
+    type: "open" | "click" | "not_open" | "not_click";
+    value: number;
+  };
+}
+
+interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  steps: WorkflowStep[];
+  status: "active" | "paused" | "draft";
+  user_id: string;
+}
+
 // Server URL - change this to your actual server URL when deployed
 const SERVER_URL = "http://localhost:3001";
 
-export const sendEmails = async (params: EmailParams): Promise<boolean> => {
-  try {
-    // Show loading toast
-    toast({
-      title: "Sending emails...",
-      description: `Attempting to send ${params.to.length} emails. This may take a moment.`,
-    });
+interface SendEmailParams {
+  to: string[];
+  subject: string;
+  body: string;
+  isHtml?: boolean;
+  fromEmail?: string;
+  appPassword?: string;
+}
 
-    // Call the backend API
-    const response = await fetch(`${SERVER_URL}/api/send-emails`, {
+export const sendEmails = async ({
+  to,
+  subject,
+  body,
+  isHtml = false,
+  fromEmail,
+  appPassword
+}: SendEmailParams) => {
+  try {
+    // Get email config if not provided
+    if (!fromEmail || !appPassword) {
+      const { data: config } = await supabase
+        .from('email_config')
+        .select('email, app_password')
+        .single();
+
+      if (!config) {
+        throw new Error('Email configuration not found');
+      }
+
+      fromEmail = fromEmail || config.email;
+      appPassword = appPassword || config.app_password;
+    }
+
+    // Create email record
+    const { data: emailData, error: emailError } = await supabase
+      .from('emails')
+      .insert({
+        subject,
+        content: body,
+        from_email: fromEmail,
+        total_recipients: to.length,
+        status: 'pending',
+        is_html: isHtml
+      })
+      .select()
+      .single();
+
+    if (emailError) throw emailError;
+
+    // Create recipient records
+    const recipientRecords = to.map(email => ({
+      email_id: emailData.id,
+      recipient_email: email,
+      status: 'pending'
+    }));
+
+    const { error: recipientError } = await supabase
+      .from('email_recipients')
+      .insert(recipientRecords);
+
+    if (recipientError) throw recipientError;
+
+    // Send to email server
+    const response = await fetch('/api/send-emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        to,
+        subject,
+        body,
+        fromEmail,
+        appPassword,
+        isHtml
+      }),
     });
 
-    const data = await response.json();
+    const result = await response.json();
 
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to send emails');
+    if (!result.success) {
+      throw new Error(result.message);
     }
 
-    // Success notification
-    toast({
-      title: "Emails sent successfully!",
-      description: `${params.to.length} emails have been sent.`,
-    });
+    // Update email status
+    await supabase
+      .from('emails')
+      .update({
+        status: result.status,
+        delivered_count: result.deliveredCount
+      })
+      .eq('id', emailData.id);
 
-    return true;
+    // Update recipient statuses
+    if (result.failedEmails?.length > 0) {
+      await supabase
+        .from('email_recipients')
+        .update({ status: 'failed' })
+        .eq('email_id', emailData.id)
+        .in('recipient_email', result.failedEmails);
+    }
+
+    if (result.deliveredCount > 0) {
+      await supabase
+        .from('email_recipients')
+        .update({ status: 'delivered', sent_at: new Date().toISOString() })
+        .eq('email_id', emailData.id)
+        .not('recipient_email', 'in', result.failedEmails || []);
+    }
+
+    return result;
   } catch (error) {
-    console.error("Error sending emails:", error);
-    toast({
-      variant: "destructive",
-      title: "Failed to send emails",
-      description: error instanceof Error ? error.message : "Unknown error occurred",
-    });
-    return false;
+    console.error('Error sending emails:', error);
+    throw error;
   }
 };
 
