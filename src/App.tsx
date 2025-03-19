@@ -9,6 +9,8 @@ import SignupPage from "./pages/SignupPage";
 import Dashboard from "./pages/Dashboard";
 import CreateEmail from "./pages/CreateEmail";
 import NotFound from "./pages/NotFound";
+import TemplateGallery from "./pages/TemplateGallery";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -22,8 +24,23 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/create-email" element={<CreateEmail />} />
+          <Route path="/templates" element={<TemplateGallery />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/create-email"
+            element={
+              <ProtectedRoute>
+                <CreateEmail />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

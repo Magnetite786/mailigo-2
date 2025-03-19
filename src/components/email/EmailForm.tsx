@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Upload, X, Trash, Eye } from "lucide-react";
+import { Loader2, Upload, X, Trash, Eye, Sparkles, Save, Send } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -25,6 +25,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import AIContentGenerator from "./AIContentGenerator";
+import EmailTemplates from "./EmailTemplates";
+import SentimentAnalyzer from "./SentimentAnalyzer";
+import EmailScheduler, { ScheduleData } from "./EmailScheduler";
 
 interface EmailConfig {
   id: string;
@@ -47,6 +57,14 @@ const EmailForm = () => {
     manualEmails: "",
   });
   const [extractedEmails, setExtractedEmails] = useState<string[]>([]);
+  const [showAiGenerator, setShowAiGenerator] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showSentimentAnalyzer, setShowSentimentAnalyzer] = useState(false);
+  const [scheduleData, setScheduleData] = useState<ScheduleData>({
+    scheduled: false,
+    date: null,
+    time: "",
+  });
 
   useEffect(() => {
     loadEmailConfigs();
@@ -168,6 +186,55 @@ const EmailForm = () => {
     reader.readAsText(file);
   };
 
+  const handleAiContentApply = (content: string) => {
+    if (isHtmlMode) {
+      setHtmlContent(content);
+    } else {
+      setFormData({ ...formData, content });
+    }
+    setShowAiGenerator(false);
+  };
+
+  const handleTemplateSelect = (template: any) => {
+    if (template.is_html) {
+      setIsHtmlMode(true);
+      setHtmlContent(template.content);
+    } else {
+      setIsHtmlMode(false);
+      setFormData({
+        ...formData,
+        subject: template.subject,
+        content: template.content
+      });
+    }
+    setShowTemplates(false);
+    toast({
+      title: "Template applied",
+      description: `"${template.name}" template has been applied to your email`,
+    });
+  };
+  
+  const handleSaveCurrentAsTemplate = () => {
+    // Save current email as a template
+    const content = isHtmlMode ? htmlContent : formData.content;
+    if (!formData.subject || !content) {
+      toast({
+        title: "Missing content",
+        description: "Please add a subject and content before saving as a template",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Open the save template dialog in EmailTemplates component
+    // This would be handled by showing the dialog and passing the current email data
+    setShowTemplates(true);
+  };
+
+  const handleScheduleUpdate = (data: ScheduleData) => {
+    setScheduleData(data);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedConfig || !formData.subject || !(formData.content || htmlContent) || !extractedEmails.length) {
@@ -187,6 +254,15 @@ const EmailForm = () => {
       const config = emailConfigs.find((c) => c.id === selectedConfig);
       if (!config) throw new Error("Selected email configuration not found");
 
+      // Calculate scheduled date if scheduling is enabled
+      let scheduledDate = null;
+      if (scheduleData.scheduled && scheduleData.date) {
+        const scheduledDateTime = new Date(scheduleData.date);
+        const [hours, minutes] = scheduleData.time.split(":").map(Number);
+        scheduledDateTime.setHours(hours, minutes);
+        scheduledDate = scheduledDateTime.toISOString();
+      }
+
       const response = await fetch("http://localhost:3001/api/send-emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,6 +275,8 @@ const EmailForm = () => {
           batchSize: 10,
           delayBetweenBatches: 1,
           isHtml: isHtmlMode,
+          scheduled: scheduleData.scheduled,
+          scheduledDate
         }),
       });
 
@@ -210,17 +288,19 @@ const EmailForm = () => {
         subject: formData.subject,
         content: isHtmlMode ? htmlContent : formData.content,
         total_recipients: extractedEmails.length,
-        delivered_count: result.deliveredCount || 0,
-        status: result.status || "completed",
+        delivered_count: scheduleData.scheduled ? 0 : (result.deliveredCount || 0),
+        status: scheduleData.scheduled ? "scheduled" : (result.status || "completed"),
         from_email: config.email,
         user_id: user.id,
         is_html: isHtmlMode,
+        scheduled: scheduleData.scheduled,
+        scheduled_for: scheduledDate,
       });
 
       if (dbError) throw dbError;
 
       toast({
-        title: "Success",
+        title: scheduleData.scheduled ? "Email Scheduled" : "Success",
         description: result.message,
       });
 
@@ -228,6 +308,11 @@ const EmailForm = () => {
       setFormData({ subject: "", content: "", manualEmails: "" });
       setHtmlContent("");
       setExtractedEmails([]);
+      setScheduleData({
+        scheduled: false,
+        date: null,
+        time: "",
+      });
     } catch (error) {
       toast({
         title: "Error sending emails",
@@ -252,185 +337,285 @@ const EmailForm = () => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="sender">Sender Email</Label>
-          <Select value={selectedConfig} onValueChange={setSelectedConfig}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select sender email" />
-            </SelectTrigger>
-            <SelectContent>
-              {emailConfigs.map((config) => (
-                <SelectItem key={config.id} value={config.id}>
-                  {config.email}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 space-y-6">
+          <Card className="p-6 shadow-sm">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium">Compose Email</h3>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowTemplates(!showTemplates)}
+                  >
+                    Templates
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {isHtmlMode ? "HTML Mode" : "Plain Text"}
+                  </span>
+                  <Switch
+                    checked={isHtmlMode}
+                    onCheckedChange={(value) => setIsHtmlMode(value)}
+                  />
+                </div>
+              </div>
 
-        <div>
-          <Label htmlFor="subject">Subject</Label>
-          <Input
-            id="subject"
-            value={formData.subject}
-            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-            placeholder="Email subject"
-          />
-        </div>
+              {showTemplates && (
+                <div className="mb-2">
+                  <EmailTemplates onSelectTemplate={handleTemplateSelect} />
+                </div>
+              )}
 
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <Label htmlFor="content">Content</Label>
-            <div className="flex items-center space-x-2">
-              <Label htmlFor="html-mode">HTML Mode</Label>
-              <Switch
-                id="html-mode"
-                checked={isHtmlMode}
-                onCheckedChange={setIsHtmlMode}
+              <div className="space-y-2">
+                <Label htmlFor="emailConfig">From Email</Label>
+                <Select
+                  value={selectedConfig}
+                  onValueChange={setSelectedConfig}
+                >
+                  <SelectTrigger id="emailConfig">
+                    <SelectValue placeholder="Select email configuration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {emailConfigs.map((config) => (
+                      <SelectItem key={config.id} value={config.id}>
+                        {config.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject</Label>
+                <Input
+                  id="subject"
+                  placeholder="Email subject"
+                  value={formData.subject}
+                  onChange={(e) =>
+                    setFormData({ ...formData, subject: e.target.value })
+                  }
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="content">Message</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex gap-1 items-center"
+                    onClick={() => setShowAiGenerator(!showAiGenerator)}
+                  >
+                    <Sparkles className="h-4 w-4 text-yellow-500" />
+                    {showAiGenerator ? "Hide AI Helper" : "AI Helper"}
+                  </Button>
+                </div>
+
+                {showAiGenerator && (
+                  <div className="mb-4">
+                    <AIContentGenerator onApplyContent={handleAiContentApply} />
+                  </div>
+                )}
+
+                {isHtmlMode ? (
+                  <>
+                    <ReactQuill
+                      theme="snow"
+                      value={htmlContent}
+                      onChange={setHtmlContent}
+                      modules={quillModules}
+                      className="h-64 mb-12"
+                    />
+                    <div className="flex justify-between items-center mt-2">
+                      <Label>Import HTML</Label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowPreview(true)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          Preview
+                        </Button>
+                        <Input
+                          type="file"
+                          accept=".html"
+                          onChange={handleHtmlFileUpload}
+                          className="max-w-[200px]"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <Textarea
+                    id="content"
+                    placeholder="Write your message here"
+                    value={formData.content}
+                    onChange={(e) =>
+                      setFormData({ ...formData, content: e.target.value })
+                    }
+                    className="min-h-[150px]"
+                    required
+                  />
+                )}
+              </div>
+            </div>
+          </Card>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="manualEmails">Recipients (Enter emails separated by commas)</Label>
+              <Textarea
+                id="manualEmails"
+                value={formData.manualEmails}
+                onChange={(e) => handleManualEmailsChange(e.target.value)}
+                placeholder="Enter email addresses separated by commas"
+                className="h-20"
               />
             </div>
-          </div>
 
-          {isHtmlMode ? (
-            <div className="space-y-4">
+            <div>
+              <Label htmlFor="file">Or Upload Recipients (CSV/Excel file)</Label>
               <div className="flex items-center gap-4">
                 <Input
+                  id="file"
                   type="file"
-                  accept=".html"
-                  onChange={handleHtmlFileUpload}
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleFileUpload}
                   className="hidden"
-                  id="html-file"
                 />
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => document.getElementById("html-file")?.click()}
+                  onClick={() => document.getElementById("file")?.click()}
                 >
                   <Upload className="w-4 h-4 mr-2" />
-                  Upload HTML File
+                  Upload File
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowPreview(true)}
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  Preview
-                </Button>
-              </div>
-              <Textarea
-                value={htmlContent}
-                onChange={(e) => setHtmlContent(e.target.value)}
-                placeholder="Paste your HTML code here..."
-                className="min-h-[200px] font-mono"
-              />
-            </div>
-          ) : (
-            <div className="min-h-[200px] border rounded-md">
-              <ReactQuill
-                theme="snow"
-                value={formData.content}
-                onChange={(content) => setFormData({ ...formData, content })}
-                modules={quillModules}
-                placeholder="Compose your email..."
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="manualEmails">Recipients (Enter emails separated by commas)</Label>
-            <Textarea
-              id="manualEmails"
-              value={formData.manualEmails}
-              onChange={(e) => handleManualEmailsChange(e.target.value)}
-              placeholder="Enter email addresses separated by commas"
-              className="h-20"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="file">Or Upload Recipients (CSV/Excel file)</Label>
-            <div className="flex items-center gap-4">
-              <Input
-                id="file"
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => document.getElementById("file")?.click()}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload File
-              </Button>
-              {extractedEmails.length > 0 && (
-                <Badge variant="secondary">
-                  {extractedEmails.length} email{extractedEmails.length !== 1 && "s"}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {extractedEmails.length > 0 && (
-          <Card className="p-4">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label>Recipients List</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setExtractedEmails([]);
-                    setFormData({ ...formData, manualEmails: "" });
-                  }}
-                >
-                  <Trash className="w-4 h-4 mr-2" />
-                  Clear All
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {extractedEmails.map((email) => (
-                  <Badge key={email} variant="secondary" className="flex items-center gap-1">
-                    {email}
-                    <button
-                      type="button"
-                      onClick={() => removeEmail(email)}
-                      className="hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                {extractedEmails.length > 0 && (
+                  <Badge variant="secondary">
+                    {extractedEmails.length} email{extractedEmails.length !== 1 && "s"}
                   </Badge>
-                ))}
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <Card className="p-6 shadow-sm">
+            <EmailScheduler onSchedule={handleScheduleUpdate} disabled={isLoading} />
+          </Card>
+        </div>
+        
+        <div className="flex-1 space-y-6">
+          <Card className="p-6 shadow-sm">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium">Email Preview</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSentimentAnalyzer(!showSentimentAnalyzer)}
+                >
+                  {showSentimentAnalyzer ? "Hide Analysis" : "Analyze Tone"}
+                </Button>
+              </div>
+
+              {showSentimentAnalyzer && (
+                <div className="mb-4">
+                  <SentimentAnalyzer 
+                    emailContent={isHtmlMode ? htmlContent : formData.content} 
+                    emailSubject={formData.subject}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="preview">Preview</Label>
+                </div>
+
+                {isHtmlMode ? (
+                  <div className="mt-4 border rounded-md p-4 min-h-[150px] overflow-y-auto" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+                ) : (
+                  <Textarea
+                    id="preview"
+                    placeholder="No preview available"
+                    value={formData.content}
+                    className="min-h-[150px]"
+                    readOnly
+                  />
+                )}
               </div>
             </div>
           </Card>
-        )}
+        </div>
       </div>
 
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Email Preview</DialogTitle>
-          </DialogHeader>
-          <div
-            className="mt-4"
-            dangerouslySetInnerHTML={{ __html: htmlContent }}
-          />
-        </DialogContent>
-      </Dialog>
+      {extractedEmails.length > 0 && (
+        <Card className="p-4">
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label>Recipients List</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setExtractedEmails([]);
+                  setFormData({ ...formData, manualEmails: "" });
+                }}
+              >
+                <Trash className="w-4 h-4 mr-2" />
+                Clear All
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {extractedEmails.map((email) => (
+                <Badge key={email} variant="secondary" className="flex items-center gap-1">
+                  {email}
+                  <button
+                    type="button"
+                    onClick={() => removeEmail(email)}
+                    className="hover:text-destructive"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
 
-      <Button type="submit" disabled={isLoading}>
-        {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-        Send Emails
-      </Button>
+      <div className="flex justify-between">
+        <Button 
+          type="button" 
+          variant="outline"
+          onClick={handleSaveCurrentAsTemplate}
+        >
+          <Save className="h-4 w-4 mr-2" />
+          Save as Template
+        </Button>
+        
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Sending Emails...
+            </>
+          ) : (
+            <>
+              <Send className="mr-2 h-4 w-4" />
+              Send Emails
+            </>
+          )}
+        </Button>
+      </div>
     </form>
   );
 };

@@ -10,30 +10,51 @@ import { Loader2 } from "lucide-react";
 
 export default function SignupForm() {
   const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    fullName: "",
+  });
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
-    const fullName = formData.get("fullName") as string;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.email || !formData.password || !formData.fullName) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      await signUp({ email, password, fullName });
+      setIsLoading(true);
+      await signUp({
+        email: formData.email,
+        password: formData.password,
+        fullName: formData.fullName,
+      });
       toast({
-        title: "Account created successfully!",
-        description: "Please check your email to verify your account.",
+        title: "Success",
+        description: "Account created successfully. Please check your email for verification.",
       });
       navigate("/login");
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Signup error:", error);
       toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create account. Please try again.",
         variant: "destructive",
-        title: "Error creating account",
-        description: error.message,
       });
     } finally {
       setIsLoading(false);
@@ -41,10 +62,10 @@ export default function SignupForm() {
   };
 
   return (
-    <Card className="w-full max-w-md">
+    <Card className="w-full max-w-md relative">
       <CardHeader>
-        <CardTitle className="text-2xl">Create an Account</CardTitle>
-        <CardDescription>Sign up for BulkMailer to start sending emails</CardDescription>
+        <CardTitle className="text-2xl">Create Account</CardTitle>
+        <CardDescription>Sign up for your MailiGo account</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
@@ -53,12 +74,13 @@ export default function SignupForm() {
             <Input
               id="fullName"
               name="fullName"
-              placeholder="John Doe"
               type="text"
-              autoCapitalize="none"
-              autoCorrect="off"
+              placeholder="John Doe"
+              value={formData.fullName}
+              onChange={handleChange}
               disabled={isLoading}
               required
+              className="relative z-10"
             />
           </div>
           <div className="space-y-2">
@@ -66,13 +88,13 @@ export default function SignupForm() {
             <Input
               id="email"
               name="email"
-              placeholder="your@email.com"
               type="email"
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect="off"
+              placeholder="your@email.com"
+              value={formData.email}
+              onChange={handleChange}
               disabled={isLoading}
               required
+              className="relative z-10"
             />
           </div>
           <div className="space-y-2">
@@ -81,36 +103,37 @@ export default function SignupForm() {
               id="password"
               name="password"
               type="password"
-              autoCapitalize="none"
-              autoComplete="new-password"
-              autoCorrect="off"
+              placeholder="Create a password"
+              value={formData.password}
+              onChange={handleChange}
               disabled={isLoading}
               required
+              className="relative z-10"
             />
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <Button 
             type="submit" 
-            className="w-full gradient-bg"
+            className="w-full relative z-10"
             disabled={isLoading}
           >
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating Account
+                Creating account...
               </>
             ) : (
-              "Sign Up"
+              "Create Account"
             )}
           </Button>
           <Button 
             type="button"
             variant="outline" 
-            className="w-full"
+            className="w-full relative z-10"
             onClick={() => navigate("/login")}
           >
-            Already have an account? Login
+            Already have an account? Sign In
           </Button>
         </CardFooter>
       </form>

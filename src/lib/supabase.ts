@@ -4,10 +4,44 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error('Missing Supabase environment variables. Please check your .env file.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create Supabase client with auto session persistence
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  },
+  db: {
+    schema: 'public'
+  }
+});
+
+// Initialize database schema if needed
+export const initializeSchema = async () => {
+  try {
+    // Check if email_config table exists
+    const { error: checkError } = await supabase
+      .from('email_config')
+      .select('id')
+      .limit(1);
+
+    if (checkError && checkError.code === '42P01') {
+      // Table doesn't exist, create it
+      const { error: createError } = await supabase
+        .rpc('init_email_config_schema');
+
+      if (createError) {
+        throw createError;
+      }
+    }
+  } catch (error) {
+    console.error('Schema initialization error:', error);
+    // Don't throw, as this is not critical for app function
+  }
+};
 
 // Auth helper functions
 export const signUp = async ({ email, password, fullName }: { email: string; password: string; fullName: string }) => {

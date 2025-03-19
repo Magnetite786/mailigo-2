@@ -1,38 +1,56 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { signIn } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import { Loader2 } from "lucide-react";
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
   const navigate = useNavigate();
+  const { login } = useAuth();
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.email || !formData.password) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      await signIn({ email, password });
+      setIsLoading(true);
+      await login(formData.email, formData.password);
       toast({
-        title: "Logged in successfully!",
-        description: "Welcome back to your account.",
+        title: "Success",
+        description: "Logged in successfully",
       });
       navigate("/dashboard");
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Login error:", error);
       toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to login. Please try again.",
         variant: "destructive",
-        title: "Login failed",
-        description: error.message,
       });
     } finally {
       setIsLoading(false);
@@ -40,10 +58,10 @@ export default function LoginForm() {
   };
 
   return (
-    <Card className="w-full max-w-md">
+    <Card className="w-full max-w-md relative">
       <CardHeader>
         <CardTitle className="text-2xl">Login</CardTitle>
-        <CardDescription>Access your BulkMailer account</CardDescription>
+        <CardDescription>Access your MailiGo account</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
@@ -52,13 +70,13 @@ export default function LoginForm() {
             <Input
               id="email"
               name="email"
-              placeholder="your@email.com"
               type="email"
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect="off"
+              placeholder="your@email.com"
+              value={formData.email}
+              onChange={handleChange}
               disabled={isLoading}
               required
+              className="relative z-10"
             />
           </div>
           <div className="space-y-2">
@@ -67,33 +85,34 @@ export default function LoginForm() {
               id="password"
               name="password"
               type="password"
-              autoCapitalize="none"
-              autoComplete="current-password"
-              autoCorrect="off"
+              placeholder="Enter your password"
+              value={formData.password}
+              onChange={handleChange}
               disabled={isLoading}
               required
+              className="relative z-10"
             />
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <Button 
             type="submit" 
-            className="w-full gradient-bg"
+            className="w-full relative z-10"
             disabled={isLoading}
           >
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Logging in
+                Signing in...
               </>
             ) : (
-              "Login"
+              "Sign In"
             )}
           </Button>
           <Button 
             type="button"
             variant="outline" 
-            className="w-full"
+            className="w-full relative z-10"
             onClick={() => navigate("/signup")}
           >
             Don't have an account? Sign Up

@@ -1,6 +1,15 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Create profiles table for storing user information
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+    full_name TEXT,
+    avatar_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
 -- Create emails table for storing email campaigns
 CREATE TABLE IF NOT EXISTS emails (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -33,9 +42,9 @@ CREATE TABLE IF NOT EXISTS email_config (
     app_password TEXT NOT NULL,
     batch_size INTEGER DEFAULT 10,
     delay_between_batches INTEGER DEFAULT 1,
+    is_default BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    CONSTRAINT unique_user_config UNIQUE (user_id)
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- Create email_logs table for detailed logging
@@ -48,10 +57,20 @@ CREATE TABLE IF NOT EXISTS email_logs (
 );
 
 -- Enable Row Level Security (RLS)
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE emails ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_recipients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_logs ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for profiles table
+CREATE POLICY "Users can view their own profile"
+    ON profiles FOR SELECT
+    USING (auth.uid() = id);
+
+CREATE POLICY "Users can update their own profile"
+    ON profiles FOR UPDATE
+    USING (auth.uid() = id);
 
 -- Create policies for emails table
 CREATE POLICY "Users can view their own emails"

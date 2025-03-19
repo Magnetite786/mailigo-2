@@ -2,335 +2,310 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
+import { Eye, EyeOff, Plus, Trash2, Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Eye, EyeOff, Pencil, Trash } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/lib/auth";
+import { Loader2 } from "lucide-react";
 
 interface EmailConfig {
   id: string;
   email: string;
   app_password: string;
-  created_at: string;
+  is_default: boolean;
   user_id: string;
+  created_at: string;
 }
 
 export default function EmailConfigForm() {
-  const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [emailConfigs, setEmailConfigs] = useState<EmailConfig[]>([]);
-  const [formData, setFormData] = useState({
-    email: "",
-    app_password: "",
-  });
-  const [editingConfig, setEditingConfig] = useState<EmailConfig | null>(null);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [configToDelete, setConfigToDelete] = useState<EmailConfig | null>(null);
-  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-  const [selectedConfig, setSelectedConfig] = useState<string | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [newAppPassword, setNewAppPassword] = useState("");
+  const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+  const { user } = useAuth();
 
+  // Load email configurations from Supabase
   useEffect(() => {
     loadEmailConfigs();
-  }, []);
+  }, [user]);
 
   const loadEmailConfigs = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No authenticated user");
-
-      const { data, error } = await supabase
-        .from("email_configs")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setEmailConfigs(data || []);
-
-      if (data && data.length > 0 && !selectedConfig) {
-        setSelectedConfig(data[0].id);
-      }
-    } catch (error) {
+    if (!user) {
       toast({
-        title: "Error loading email configurations",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.email || !formData.app_password) {
-      toast({
-        title: "Missing fields",
-        description: "Please fill in all required fields",
+        title: "Authentication Required",
+        description: "Please log in to manage email configurations.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No authenticated user");
-
-      const { data: existingConfigs } = await supabase
-        .from("email_configs")
-        .select("id")
-        .eq("email", formData.email)
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from("email_config")
+        .select("*")
         .eq("user_id", user.id)
-        .neq("id", editingConfig?.id || "");
+        .order("created_at", { ascending: false });
 
-      if (existingConfigs && existingConfigs.length > 0) {
-        toast({
-          title: "Email already exists",
-          description: "This email is already configured",
-          variant: "destructive",
-        });
-        return;
+      if (error) {
+        throw new Error(error.message);
       }
 
-      if (editingConfig) {
-        const { error } = await supabase
-          .from("email_configs")
-          .update({
-            email: formData.email,
-            app_password: formData.app_password,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", editingConfig.id)
-          .eq("user_id", user.id);
-
-        if (error) throw error;
-        toast({
-          title: "Success",
-          description: "Email configuration updated successfully",
-        });
-      } else {
-        const { error } = await supabase.from("email_configs").insert([
-          {
-            email: formData.email,
-            app_password: formData.app_password,
-            user_id: user.id,
-          },
-        ]);
-
-        if (error) throw error;
-        toast({
-          title: "Success",
-          description: "Email configuration saved successfully",
-        });
+      if (!data) {
+        throw new Error("No data received from the server");
       }
 
-      setFormData({ email: "", app_password: "" });
-      setEditingConfig(null);
-      loadEmailConfigs();
+      setEmailConfigs(data);
     } catch (error) {
+      console.error("Error loading email configs:", error);
       toast({
-        title: "Error",
-        description: error.message,
+        title: "Error loading configurations",
+        description: error instanceof Error ? error.message : "Failed to load email configurations. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
-      setShowUpdateDialog(false);
     }
   };
 
-  const handleDelete = async (config: EmailConfig) => {
-    setIsLoading(true);
+  const handleAddConfig = async () => {
+    if (!user) return;
+
+    if (!newEmail || !newAppPassword) {
+      toast({
+        title: "Error",
+        description: "Please fill in both email and app password fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No authenticated user");
+      setIsLoading(true);
+
+      // Check if this is the first config (make it default)
+      const isFirst = emailConfigs.length === 0;
+
+      const { data, error } = await supabase
+        .from("email_config")
+        .insert([
+          {
+            email: newEmail,
+            app_password: newAppPassword,
+            user_id: user.id,
+            is_default: isFirst,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setEmailConfigs([data, ...emailConfigs]);
+      setNewEmail("");
+      setNewAppPassword("");
+
+      toast({
+        title: "Success",
+        description: "Email configuration saved successfully.",
+      });
+    } catch (error) {
+      console.error("Error adding config:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save email configuration. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteConfig = async (id: string) => {
+    if (!user) return;
+
+    try {
+      setIsLoading(true);
 
       const { error } = await supabase
-        .from("email_configs")
+        .from("email_config")
         .delete()
-        .eq("id", config.id)
+        .eq("id", id)
         .eq("user_id", user.id);
 
       if (error) throw error;
+
+      const updatedConfigs = emailConfigs.filter(config => config.id !== id);
+      
+      // If we deleted the default config, make the first remaining one default
+      if (emailConfigs.find(config => config.id === id)?.is_default && updatedConfigs.length > 0) {
+        const { error: updateError } = await supabase
+          .from("email_config")
+          .update({ is_default: true })
+          .eq("id", updatedConfigs[0].id)
+          .eq("user_id", user.id);
+
+        if (updateError) throw updateError;
+        updatedConfigs[0].is_default = true;
+      }
+
+      setEmailConfigs(updatedConfigs);
       toast({
         title: "Success",
-        description: "Email configuration deleted successfully",
+        description: "Email configuration deleted successfully.",
       });
-      loadEmailConfigs();
     } catch (error) {
+      console.error("Error deleting config:", error);
       toast({
         title: "Error",
-        description: error.message,
+        description: "Failed to delete email configuration. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
-      setShowDeleteDialog(false);
-      setConfigToDelete(null);
     }
   };
 
-  const handleEdit = (config: EmailConfig) => {
-    setEditingConfig(config);
-    setFormData({
-      email: config.email,
-      app_password: config.app_password,
-    });
-    setShowUpdateDialog(true);
+  const toggleDefault = async (id: string) => {
+    if (!user) return;
+
+    try {
+      setIsLoading(true);
+
+      // First, remove default from all configs
+      const { error: resetError } = await supabase
+        .from("email_config")
+        .update({ is_default: false })
+        .eq("user_id", user.id);
+
+      if (resetError) throw resetError;
+
+      // Then set the selected config as default
+      const { error } = await supabase
+        .from("email_config")
+        .update({ is_default: true })
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      setEmailConfigs(configs =>
+        configs.map(config => ({
+          ...config,
+          is_default: config.id === id,
+        }))
+      );
+
+      toast({
+        title: "Success",
+        description: "Default email updated successfully.",
+      });
+    } catch (error) {
+      console.error("Error updating default:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update default email. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const togglePasswordVisibility = (id: string) => {
+    setShowPasswords(prev => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add Email Configuration</CardTitle>
+          <CardTitle>Email Settings</CardTitle>
+          <CardDescription>
+            Configure your email accounts for sending campaigns. Add Gmail accounts and their app passwords.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-                placeholder="Enter email address"
-              />
+        <CardContent className="space-y-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
             </div>
-            <div>
-              <Label htmlFor="app_password">App Password</Label>
-              <div className="relative">
-                <Input
-                  id="app_password"
-                  type={showPassword ? "text" : "password"}
-                  value={formData.app_password}
-                  onChange={(e) =>
-                    setFormData({ ...formData, app_password: e.target.value })
-                  }
-                  placeholder="Enter app password"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-2 top-1/2 -translate-y-1/2"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+          ) : emailConfigs.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>No email configurations found.</p>
+              <p className="text-sm">Add your first email configuration below.</p>
             </div>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingConfig ? "Update" : "Save"} Configuration
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {emailConfigs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Saved Configurations</CardTitle>
-          </CardHeader>
-          <CardContent>
+          ) : (
             <div className="space-y-4">
               {emailConfigs.map((config) => (
                 <div
                   key={config.id}
-                  className="flex items-center justify-between p-4 border rounded-lg"
+                  className="p-4 border rounded-lg bg-white hover:bg-gray-50 transition-colors"
                 >
-                  <div>
-                    <p className="font-medium">{config.email}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Added on{" "}
-                      {new Date(config.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => handleEdit(config)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        setConfigToDelete(config);
-                        setShowDeleteDialog(true);
-                      }}
-                    >
-                      <Trash className="h-4 w-4" />
-                    </Button>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{config.email}</span>
+                        {config.is_default && (
+                          <Badge variant="secondary">Default</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type={showPasswords[config.id] ? "text" : "password"}
+                          value={config.app_password}
+                          className="w-64"
+                          readOnly
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => togglePasswordVisibility(config.id)}
+                        >
+                          {showPasswords[config.id] ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!config.is_default && (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={config.is_default}
+                            onCheckedChange={() => toggleDefault(config.id)}
+                            disabled={isLoading}
+                          />
+                          <Label className="text-sm">Make Default</Label>
+                        </div>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleDeleteConfig(config.id)}
+                        disabled={isLoading}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the email configuration for{" "}
-              {configToDelete?.email}. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => configToDelete && handleDelete(configToDelete)}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={showUpdateDialog} onOpenChange={setShowUpdateDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Update Configuration</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to update the configuration for{" "}
-              {editingConfig?.email}?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setEditingConfig(null);
-              setFormData({ email: "", app_password: "" });
-            }}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleSubmit}>
-              Update
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 } 
