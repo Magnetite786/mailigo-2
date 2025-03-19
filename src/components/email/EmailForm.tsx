@@ -65,6 +65,8 @@ const EmailForm = () => {
     date: null,
     time: "",
   });
+  const [previewMode, setPreviewMode] = useState(false);
+  const [htmlInputMode, setHtmlInputMode] = useState<'editor' | 'code'>('editor');
 
   useEffect(() => {
     loadEmailConfigs();
@@ -324,15 +326,40 @@ const EmailForm = () => {
     }
   };
 
-  const quillModules = {
+  const modules = {
     toolbar: [
-      [{ header: [1, 2, 3, false] }],
-      ["bold", "italic", "underline", "strike"],
-      [{ list: "ordered" }, { list: "bullet" }],
-      [{ color: [] }, { background: [] }],
-      ["link"],
-      ["clean"],
+      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'color': [] }, { 'background': [] }],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'align': [] }],
+      ['link', 'image'],
+      ['clean']
     ],
+  };
+
+  const handleModeSwitch = (enableHtml: boolean) => {
+    if (enableHtml) {
+      // Convert plain text to basic HTML if switching to HTML mode
+      const plainText = formData.content;
+      const basicHtml = plainText
+        .split('\n')
+        .map(line => `<p>${line}</p>`)
+        .join('');
+      setHtmlContent(basicHtml);
+    } else {
+      // Convert HTML to plain text if switching to plain mode
+      const div = document.createElement('div');
+      div.innerHTML = htmlContent;
+      const plainText = div.innerText || div.textContent || '';
+      setFormData({ ...formData, content: plainText });
+    }
+    setIsHtmlMode(enableHtml);
+    setPreviewMode(false);
+  };
+
+  const togglePreview = () => {
+    setPreviewMode(!previewMode);
   };
 
   return (
@@ -357,7 +384,7 @@ const EmailForm = () => {
                   </span>
                   <Switch
                     checked={isHtmlMode}
-                    onCheckedChange={(value) => setIsHtmlMode(value)}
+                    onCheckedChange={handleModeSwitch}
                   />
                 </div>
               </div>
@@ -403,16 +430,38 @@ const EmailForm = () => {
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <Label htmlFor="content">Message</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex gap-1 items-center"
-                    onClick={() => setShowAiGenerator(!showAiGenerator)}
-                  >
-                    <Sparkles className="h-4 w-4 text-yellow-500" />
-                    {showAiGenerator ? "Hide AI Helper" : "AI Helper"}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {isHtmlMode && (
+                      <div className="flex items-center gap-2 mr-4">
+                        <Button
+                          type="button"
+                          variant={htmlInputMode === 'editor' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setHtmlInputMode('editor')}
+                        >
+                          Visual Editor
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={htmlInputMode === 'code' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setHtmlInputMode('code')}
+                        >
+                          HTML Code
+                        </Button>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex gap-1 items-center"
+                      onClick={() => setShowAiGenerator(!showAiGenerator)}
+                    >
+                      <Sparkles className="h-4 w-4 text-yellow-500" />
+                      {showAiGenerator ? "Hide AI Helper" : "AI Helper"}
+                    </Button>
+                  </div>
                 </div>
 
                 {showAiGenerator && (
@@ -422,35 +471,89 @@ const EmailForm = () => {
                 )}
 
                 {isHtmlMode ? (
-                  <>
-                    <ReactQuill
-                      theme="snow"
-                      value={htmlContent}
-                      onChange={setHtmlContent}
-                      modules={quillModules}
-                      className="h-64 mb-12"
-                    />
-                    <div className="flex justify-between items-center mt-2">
-                      <Label>Import HTML</Label>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
-                          onClick={() => setShowPreview(true)}
+                          onClick={() => document.getElementById('html-file')?.click()}
+                          className="text-sm"
                         >
-                          <Eye className="h-4 w-4 mr-1" />
-                          Preview
+                          <Upload className="h-4 w-4 mr-2" />
+                          Import HTML File
                         </Button>
-                        <Input
+                        <input
+                          id="html-file"
                           type="file"
-                          accept=".html"
+                          accept=".html,.htm"
                           onChange={handleHtmlFileUpload}
-                          className="max-w-[200px]"
+                          className="hidden"
                         />
                       </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={togglePreview}
+                        className="flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4" />
+                        {previewMode ? 'Edit' : 'Preview'}
+                      </Button>
                     </div>
-                  </>
+
+                    {previewMode ? (
+                      <div className="border rounded-lg p-4 min-h-[300px] bg-white overflow-auto">
+                        <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+                      </div>
+                    ) : (
+                      <>
+                        {htmlInputMode === 'editor' ? (
+                          <ReactQuill
+                            value={htmlContent}
+                            onChange={setHtmlContent}
+                            modules={modules}
+                            className="bg-white rounded-lg"
+                            style={{ minHeight: '300px' }}
+                          />
+                        ) : (
+                          <div className="space-y-2">
+                            <Textarea
+                              value={htmlContent}
+                              onChange={(e) => setHtmlContent(e.target.value)}
+                              placeholder="Paste your HTML code here..."
+                              className="font-mono text-sm min-h-[300px]"
+                            />
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    const text = await navigator.clipboard.readText();
+                                    setHtmlContent(text);
+                                    toast({
+                                      title: "HTML pasted successfully",
+                                      description: "The HTML code has been pasted from your clipboard",
+                                    });
+                                  } catch (error) {
+                                    toast({
+                                      title: "Failed to paste HTML",
+                                      description: "Please paste the HTML code manually",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }}
+                              >
+                                Paste from Clipboard
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 ) : (
                   <Textarea
                     id="content"
@@ -459,7 +562,7 @@ const EmailForm = () => {
                     onChange={(e) =>
                       setFormData({ ...formData, content: e.target.value })
                     }
-                    className="min-h-[150px]"
+                    className="min-h-[300px]"
                     required
                   />
                 )}

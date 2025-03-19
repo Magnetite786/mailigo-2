@@ -5,6 +5,8 @@ import { Mail, Search, Filter, ArrowRight, Star, Copy, Eye, Tags } from "lucide-
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
+import { TemplatePreviewModal } from "@/components/email/TemplatePreviewModal";
+import { toast } from "sonner";
 
 // Sample template data
 const templates = [
@@ -98,6 +100,8 @@ const categories = ["All", "Onboarding", "Marketing", "Content", "Customer Succe
 export default function TemplateGallery() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
   const filteredTemplates = templates.filter(template => {
     const matchesCategory = selectedCategory === "All" || template.category === selectedCategory;
@@ -106,6 +110,25 @@ export default function TemplateGallery() {
                          template.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesCategory && matchesSearch;
   });
+
+  const handlePreview = (template: any) => {
+    setSelectedTemplate(template);
+    setIsPreviewModalOpen(true);
+  };
+
+  const handleUseTemplate = (template: any) => {
+    // For non-logged in users, redirect to signup
+    window.location.href = `/signup?template=${template.id}`;
+  };
+
+  const handleCopyTemplate = async (template: any) => {
+    try {
+      await navigator.clipboard.writeText(template.preview);
+      toast.success("Template HTML copied to clipboard!");
+    } catch (error) {
+      toast.error("Failed to copy template. Please try again.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -186,11 +209,17 @@ export default function TemplateGallery() {
               className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow"
             >
               {/* Preview */}
-              <div className="h-64 border-b border-gray-200 overflow-hidden">
+              <div className="relative h-64 border-b border-gray-200 overflow-hidden group">
                 <div 
                   className="h-full w-full"
                   dangerouslySetInnerHTML={{ __html: template.preview }}
                 />
+                <div 
+                  className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity cursor-pointer flex items-center justify-center"
+                  onClick={() => handlePreview(template)}
+                >
+                  <Eye className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
               </div>
 
               {/* Content */}
@@ -240,17 +269,26 @@ export default function TemplateGallery() {
                   <Button 
                     variant="outline" 
                     className="flex-1 flex items-center justify-center gap-2"
-                    onClick={() => window.open(`/templates/preview/${template.id}`, '_blank')}
+                    onClick={() => handlePreview(template)}
                   >
                     <Eye className="h-4 w-4" />
                     Preview
                   </Button>
-                  <Link to="/signup" className="flex-1">
-                    <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center gap-2">
+                  <div className="flex-1 flex gap-2">
+                    <Button 
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => handleCopyTemplate(template)}
+                    >
                       <Copy className="h-4 w-4" />
-                      Use Template
                     </Button>
-                  </Link>
+                    <Button 
+                      className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                      onClick={() => handleUseTemplate(template)}
+                    >
+                      Use
+                    </Button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -275,6 +313,15 @@ export default function TemplateGallery() {
           </div>
         </div>
       </main>
+
+      {/* Preview Modal */}
+      {selectedTemplate && (
+        <TemplatePreviewModal
+          isOpen={isPreviewModalOpen}
+          onClose={() => setIsPreviewModalOpen(false)}
+          template={selectedTemplate}
+        />
+      )}
     </div>
   );
 } 
